@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -158,6 +159,15 @@ test('works fully offline after first visit (service worker + IndexedDB)', async
   await expect(page.getByText('Edited offline')).toBeVisible();
   await shot(page, '09-offline-detail');
 
+  // Excel export works offline too (library comes from the service-worker cache)
+  await page.goto('./#/settings');
+  const [xl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-excel').click()]);
+  expect(xl.suggestedFilename()).toMatch(/\.xlsx$/);
+  const wbOff = new ExcelJS.Workbook();
+  await wbOff.xlsx.load(readFileSync((await xl.path())!) as never);
+  expect(wbOff.getWorksheet('Suppliers')!.getRow(2).getCell(2).value).toBe('Offline Supplier Ltd');
+  expect(wbOff.getWorksheet('Suppliers')!.getImages()).toHaveLength(1);
+
   // close & reopen the app while still offline
   await page.goto('about:blank');
   await page.goto('./#/suppliers');
@@ -258,4 +268,35 @@ test('save to Photos (labelled copies), trash & restore, copies card', async ({ 
   await expect(page.getByTestId('supplier-row')).toHaveCount(1);
   await page.getByTestId('supplier-row').click();
   await expect(page.getByTestId('photo-thumb')).toHaveCount(2); // photos came back too
+});
+
+test('Excel export: one row per supplier with photos in the row', async ({ page }) => {
+  await fresh(page);
+  await page.getByTestId('nav-add').click();
+  await page.getByTestId('capture-card_front-input').setInputFiles(fx('card.jpg'));
+  await expect(page.getByTestId('save-state')).toContainText('Saved');
+  await page.getByTestId('capture-shop-input').setInputFiles(fx('shop.jpg'));
+  await fillField(page, 'companyName', 'Excel Co 义乌');
+  await fillField(page, 'wechatId', 'excel_wx');
+  await fillField(page, 'booth', '777');
+  await page.getByTestId('save-next').click();
+  await expect(page.getByTestId('supplier-code')).toContainText('YW-002');
+  await fillField(page, 'companyName', 'Second Co');
+  await page.getByTestId('done').click();
+  await expect(page.getByTestId('detail-code')).toHaveText('YW-002');
+
+  await page.goto('./#/');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('safety-excel').click()]);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(readFileSync((await dl.path())!) as never);
+  const ws = wb.getWorksheet('Suppliers')!;
+  expect(ws.actualRowCount).toBe(3);
+  expect(ws.getRow(2).getCell(1).value).toBe('YW-001');
+  expect(ws.getRow(2).getCell(2).value).toBe('Excel Co 义乌');
+  expect(ws.getRow(2).getCell(4).value).toBe('excel_wx');
+  expect(ws.getRow(3).getCell(2).value).toBe('Second Co');
+  const rows = ws.getImages().map((i) => Math.floor(i.range.tl.nativeRow));
+  expect(rows).toEqual([1, 1]); // both photos sit in YW-001's row
+  await expect(page.getByText(/Excel copy \(with photos\)/)).toBeVisible();
+  await expect(page.getByText(/Last just now · one row per supplier/)).toBeVisible();
 });

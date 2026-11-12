@@ -11,7 +11,7 @@ import { SyncCard } from './Dashboard';
 import { listSnapshots, maybeSnapshot, restoreSnapshot, snapshotDate } from '../sync/snapshots';
 import { unsavedPhotoIds } from '../devicePhotos';
 import { openSaveToPhotos } from '../ui/saveSheet';
-import { backupToFiles } from '../ui/safety';
+import { backupToFiles, excelToFiles } from '../ui/safety';
 
 export function More() {
   const items: [string, string, string][] = [
@@ -233,6 +233,25 @@ function BackupSection() {
           Download .zip
         </button>
       </div>
+      <div className="small">
+        <b>Excel copy:</b> one row per supplier, one column per field, and the photos inside the same row (plus a sheet with every price). Good for reading, filtering and sharing on a computer. Restoring into the app uses the .zip.
+      </div>
+      <button
+        className="btn btn-outline"
+        disabled={!!busy}
+        data-testid="export-excel"
+        onClick={async () => {
+          try {
+            await excelToFiles(setBusy);
+          } catch (e) {
+            alert(`Excel export failed: ${(e as Error).message}`);
+          } finally {
+            setBusy(null);
+          }
+        }}
+      >
+        📊 Excel (.xlsx) with photos
+      </button>
       <label className="btn btn-outline">
         Restore / merge from backup…
         <input

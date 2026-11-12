@@ -19,6 +19,18 @@ export async function backupToFiles() {
   }
 }
 
+/** Excel copy: one row per supplier with its photos. Loaded on demand (the Excel library is large). */
+export async function excelToFiles(onProgress?: (msg: string) => void) {
+  onProgress?.('Building Excel file…');
+  const { exportExcel } = await import('../excel');
+  const r = await exportExcel(undefined, (done, total) => onProgress?.(`Adding photos ${done}/${total}…`));
+  const how = await saveFile(r.blob, r.filename, true);
+  if (how !== 'cancelled') {
+    await setMeta(db, 'lastExcelAt', new Date().toISOString());
+    toast(`Excel ready: ${r.counts.suppliers} suppliers, ${r.counts.images} photos (${(r.blob.size / 1e6).toFixed(1)} MB)`);
+  }
+}
+
 /** "Your copies": shows every place the data is kept and what needs attention. */
 export function SafetyCard() {
   const st = useSyncStatus();
@@ -28,6 +40,7 @@ export function SafetyCard() {
       suppliers: await db.suppliers.filter((s) => !s.deleted).count(),
       photos: await db.photos.filter((p) => !p.deleted).count(),
       lastBackup: await getMeta<string | null>(db, 'lastBackupAt', null),
+      lastExcel: await getMeta<string | null>(db, 'lastExcelAt', null),
       lastSnapshot: uid ? await getMeta<string | null>(db, `lastSnapshotAt:${uid}`, null) : null,
       lastChange: (await db.suppliers.orderBy('updatedAt').last())?.updatedAt ?? null,
       unsaved: (await unsavedPhotoIds()).length,
@@ -80,6 +93,16 @@ export function SafetyCard() {
         </div>
         <button className={`btn btn-sm ${fileStale ? 'btn-primary' : ''}`} onClick={() => backupToFiles().catch((e) => alert(e.message))} data-testid="safety-backup">
           Save now
+        </button>
+      </div>
+      <div className="safety-row">
+        <span className="safety-ico">📊</span>
+        <div className="grow">
+          <b>Excel copy (with photos)</b>
+          <div className="small muted">{info.lastExcel ? `Last ${timeAgo(info.lastExcel)}` : 'Never'} · one row per supplier</div>
+        </div>
+        <button className="btn btn-sm" onClick={() => excelToFiles((m) => toast(m)).catch((e) => alert(e.message))} data-testid="safety-excel">
+          Excel
         </button>
       </div>
       <div className="safety-row">

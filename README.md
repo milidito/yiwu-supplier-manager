@@ -2,7 +2,7 @@
 
 Offline-first, mobile-first supplier CRM for walking the Yiwu market: capture a supplier (ID, photos, WeChat, phone, district/floor/booth, products, prices) in about a minute with no internet, then search, compare quotes and back up or sync later.
 
-**Status (v0.2.0, 12 Nov 2026):** working MVP. Local/offline features are implemented and tested. Cloud sync is implemented and tested against a local Postgres + PostgREST stand-in for Supabase. **No real Supabase project or hosting has been created yet.** That needs the owner's approval (see `docs/CLOUD-SETUP.md` and `docs/DEPLOY.md`).
+**Status (v0.3.0, 12 Nov 2026):** working MVP. Local/offline features are implemented and tested. Cloud sync is implemented and tested against a local Postgres + PostgREST stand-in for Supabase. **No real Supabase project or hosting has been created yet.** That needs the owner's approval (see `docs/CLOUD-SETUP.md` and `docs/DEPLOY.md`).
 
 ## Stack and why
 
@@ -37,6 +37,9 @@ Offline-first, mobile-first supplier CRM for walking the Yiwu market: capture a 
 - **Daily cloud snapshots (version history):** after a successful sync, at most once a day, a dated zip of all records goes to `<user>/backups/` in private storage. Snapshots are never overwritten. Restore from Settings brings back anything deleted since then and keeps newer edits.
 - **Trash:** deletes are soft everywhere. Suppliers, products, quotes and photos can be restored, and photo files are kept on the phone and in the cloud.
 - GitHub Pages deploy workflow (`.github/workflows/deploy.yml`).
+
+### Added in v0.3.0
+- **Excel copy (.xlsx) with photos:** sheet *Suppliers* has one row per supplier and one column per field (ID, company, contact, WeChat, phone, email, district, floor, street, booth, category, type, status, rating, follow-up, notes, products and latest prices, dates), with the supplier's photos embedded in the same row ("Photo 1…N", label above each photo, up to 20 per supplier). Sheet *Products & prices* has one row per quote with the product photo. Header filters, frozen ID/company columns, prints landscape at one page wide. Works offline. Buttons: dashboard "Your copies" → Excel, and Settings → Backup. A readable copy only; restore uses the .zip.
 
 ### Planned (not built)
 - Persian (فارسی) / bilingual UI with RTL.

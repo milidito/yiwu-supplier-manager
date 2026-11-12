@@ -1,6 +1,6 @@
 {
   "name": "yiwu-supplier-manager",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Offline-first mobile PWA for capturing and comparing Yiwu market suppliers",
   "scripts": {
     "dev": "vite --host",
@@ -15,6 +15,7 @@
     "@supabase/supabase-js": "^2.119.0",
     "dexie": "^4.4.7",
     "dexie-react-hooks": "^4.4.0",
+    "exceljs": "^4.4.0",
     "jszip": "^3.10.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

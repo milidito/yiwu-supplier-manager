@@ -15,6 +15,7 @@
 | UI cloud flow: enter project, sign in, capture offline, **auto-sync on reconnect**, rows + photo in Postgres, daily snapshot created | Playwright + local backend | ✅ |
 | v0.2: soft delete keeps photo files (phone + cloud); Trash restore of supplier/product/photo across phones; restored code re-numbered if reused | unit + integration + Playwright | ✅ |
 | v0.2: daily cloud snapshot once per day, older kept, other account cannot list; restore brings back deleted data after it synced | unit + integration | ✅ |
+| v0.3: Excel export — one row per supplier, all fields as columns, photos anchored in the supplier's row, quotes sheet with product photo; works offline | unit (ExcelJS read-back) + Playwright + LibreOffice render | ✅ |
 | v0.2: Save to Photos sheet, labelled copy named `YW-001_shop_1.jpg` with caption bar (Chinese text OK); copies card | Playwright | ✅ |
 
 **Not yet tested:** a real Supabase project (auth emails, real Storage service), a real iPhone (camera, the iOS share sheet's "Save N Images" option, home-screen install), Chinese mobile networks.
@@ -33,6 +34,7 @@
 11. Restore test: on a fresh browser, Settings → Restore from the zip.
 12. **Save to Photos:** take a photo, tap “Save to Photos” in the message that appears, then “Save 1 to Photos”. Check whether iOS shows **“Save Image”** (if it doesn't, use “Save to Files”). Open Photos and check the label (supplier ID + booth) at the bottom.
 13. Trash: move a supplier to Trash, restore it from More → Trash, and check its photos came back.
+15. Excel: Dashboard → Your copies → Excel → Save to Files. Open it in Excel/Numbers on a computer: one row per supplier, photos in the row.
 14. Snapshot: Settings → Cloud snapshots → “Save a snapshot now”, delete a test supplier, sync, then Restore that snapshot: the supplier returns.
 
 ## Commands
