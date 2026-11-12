@@ -32,6 +32,8 @@ export interface SyncStatus {
   lastSyncOkAt: string | null;
   lastError: string | null;
   email: string | null;
+  /** photos still downloading from the cloud (new phone / reinstall) */
+  downloading: number;
 }
 
 type Listener = (s: SyncStatus) => void;
@@ -40,7 +42,7 @@ class Runner {
   remote: SupabaseRemote | null = null;
   private engine: SyncEngine | null = null;
   private listeners = new Set<Listener>();
-  private status: SyncStatus = { state: 'local_only', pending: 0, lastSyncOkAt: null, lastError: null, email: null };
+  private status: SyncStatus = { state: 'local_only', pending: 0, lastSyncOkAt: null, lastError: null, email: null, downloading: 0 };
   private timer: ReturnType<typeof setTimeout> | null = null;
   private debounce: ReturnType<typeof setTimeout> | null = null;
   private failures = 0;
@@ -63,8 +65,17 @@ class Runner {
     this.listeners.forEach((fn) => fn(this.status));
   }
 
+  /**
+   * The deploy build can carry the owner's project URL + publishable key (both public by design;
+   * data is protected by sign-in + Row Level Security). A fresh install on a new phone is then
+   * already pointed at the right project: just sign in. "Disconnect" stores null and overrides it.
+   */
   async getConfig(): Promise<CloudConfig | null> {
-    return getMeta<CloudConfig | null>(db, 'cloudConfig', null);
+    const row = await db.meta.get('cloudConfig');
+    if (row !== undefined) return row.value as CloudConfig | null;
+    const url = import.meta.env.VITE_DEFAULT_SUPABASE_URL as string | undefined;
+    const anonKey = import.meta.env.VITE_DEFAULT_SUPABASE_KEY as string | undefined;
+    return url && anonKey ? { url, anonKey } : null;
   }
 
   async saveConfig(cfg: CloudConfig | null) {
@@ -121,6 +132,7 @@ class Runner {
 
   async refresh() {
     const pending = await pendingCount(db);
+    const downloading = await db.photos.where('blobState').equals('remote_only').filter((p) => !p.deleted).count();
     const lastSyncOkAt = await getMeta<string | null>(db, 'lastSyncOkAt', null);
     let email: string | null = null;
     let state: SyncState;
@@ -136,7 +148,7 @@ class Runner {
       else if (this.status.state === 'error' && this.status.lastError) state = 'error';
       else state = pending > 0 ? 'pending' : 'synced';
     }
-    this.set({ pending, lastSyncOkAt, email, state });
+    this.set({ pending, lastSyncOkAt, email, state, downloading });
   }
 
   async syncNow(): Promise<SyncResult | null> {
@@ -173,6 +185,8 @@ class Runner {
     await this.refresh();
     if (keepError && this.status.state !== 'error') this.set({ state: 'error' });
     this.schedule();
+    // more cloud photos to fetch (e.g. first sign-in on a new phone): continue soon
+    if (res?.morePhotos) this.kick(3000);
     return res;
   }
 

@@ -36,7 +36,9 @@ import { type Remote, type RemoteRow, fromRemote, photoPath, toRemote } from './
 
 export const PULL_OVERLAP_MS = 2 * 60 * 1000;
 const PUSH_BATCH = 50;
-const DOWNLOAD_LIMIT = 40;
+const DOWNLOAD_BATCH = 40;
+/** per sync run; remaining photos continue in the next run a few seconds later */
+const DOWNLOAD_TIME_BUDGET_MS = 90_000;
 
 export interface SyncResult {
   ok: boolean;
@@ -46,6 +48,8 @@ export interface SyncResult {
   downloaded: number;
   conflicts: number;
   errors: string[];
+  /** photos that exist only in the cloud and still need downloading (e.g. after installing on a new phone) */
+  morePhotos?: number;
 }
 
 type Local = Record<string, unknown> & { id: string; updatedAt: string; dirty: 0 | 1; baseUpdatedAt?: string | null };
@@ -131,7 +135,7 @@ export class SyncEngine {
 
     // 4. DOWNLOAD photos created on other devices
     try {
-      res.downloaded += await this.downloadMissingPhotos(userId);
+      res.downloaded += await this.downloadMissingPhotos(userId, res);
     } catch (e) {
       res.errors.push(`Photo download: ${msg(e)}`);
       res.ok = false;
@@ -321,29 +325,37 @@ export class SyncEngine {
   }
 
   // ---------------- DOWNLOAD ----------------
-  private async downloadMissingPhotos(userId: string): Promise<number> {
-    const missing = await this.db.photos
-      .where('blobState')
-      .equals('remote_only')
-      .filter((p) => !p.deleted)
-      .limit(DOWNLOAD_LIMIT)
-      .toArray();
+  private async downloadMissingPhotos(userId: string, res?: SyncResult): Promise<number> {
+    const started = Date.now();
     let n = 0;
     const errors: string[] = [];
-    for (const ph of missing) {
-      try {
-        const full = await this.remote.downloadPhoto(photoPath(userId, ph.id));
-        const thumb = await thumbFromFull(full);
-        await this.db.transaction('rw', this.db.photos, this.db.photoBlobs, async () => {
-          await this.db.photoBlobs.put({ id: ph.id, full, thumb });
-          await this.db.photos.update(ph.id, { blobState: 'uploaded', uploadError: null });
-        });
-        n++;
-      } catch (e) {
-        errors.push(msg(e));
-        await this.db.photos.update(ph.id, { uploadError: `Download failed: ${msg(e)}` });
+    const failed = new Set<string>();
+    while (Date.now() - started < DOWNLOAD_TIME_BUDGET_MS) {
+      const batch = await this.db.photos
+        .where('blobState')
+        .equals('remote_only')
+        .filter((p) => !p.deleted && !failed.has(p.id))
+        .limit(DOWNLOAD_BATCH)
+        .toArray();
+      if (!batch.length) break;
+      for (const ph of batch) {
+        try {
+          const full = await this.remote.downloadPhoto(photoPath(userId, ph.id));
+          const thumb = await thumbFromFull(full);
+          await this.db.transaction('rw', this.db.photos, this.db.photoBlobs, async () => {
+            await this.db.photoBlobs.put({ id: ph.id, full, thumb });
+            await this.db.photos.update(ph.id, { blobState: 'uploaded', uploadError: null });
+          });
+          n++;
+        } catch (e) {
+          failed.add(ph.id);
+          errors.push(msg(e));
+          await this.db.photos.update(ph.id, { uploadError: `Download failed: ${msg(e)}` });
+        }
+        if (Date.now() - started >= DOWNLOAD_TIME_BUDGET_MS) break;
       }
     }
+    if (res) res.morePhotos = await this.db.photos.where('blobState').equals('remote_only').filter((p) => !p.deleted && !failed.has(p.id)).count();
     if (errors.length) throw new Error(`${errors.length} photo(s) could not be downloaded (${errors[0]})`);
     return n;
   }

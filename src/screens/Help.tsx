@@ -31,6 +31,14 @@ export function Help() {
           <li>Complete “To complete later” records, set follow-ups, compare prices.</li>
         </ul>
       </Section>
+      <Section title="Reinstalled the app, or a new phone?">
+        <ol className="small">
+          <li>Open the app link in Safari → Share → Add to Home Screen. Open it from the icon.</li>
+          <li>More → Settings → Cloud sync: the project is already filled in. Enter your email + app password → <b>Sign in</b>. (The password is in iPhone Passwords if you saved it.)</li>
+          <li>Keep the app open on Wi-Fi: all suppliers arrive first, then the photos download (the status shows how many are left).</li>
+          <li>No cloud? Settings → Restore from your latest backup .zip in iCloud Drive.</li>
+        </ol>
+      </Section>
       <Section title="Good to know">
         <ul className="small">
           <li>Ratings, supplier type and notes are your own observations.</li>

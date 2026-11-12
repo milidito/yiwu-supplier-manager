@@ -275,3 +275,22 @@ describe('trash, snapshots and restore', () => {
     expect((await d.suppliers.get(s.id))?.notes).toBe('newer');
   });
 });
+
+describe('new phone', () => {
+  it('downloads all cloud photos in one sync (more than one batch)', async () => {
+    const server = new FakeServer();
+    const a = newDevice();
+    const s = await repo.createSupplier({ companyName: 'Many photos' }, a);
+    for (let i = 0; i < 95; i++) await repo.addPhoto({ supplierId: s.id, kind: 'product', file: new Blob(['x']) }, a, img(String(i % 10)));
+    await new SyncEngine(a, new FakeRemote(server)).sync();
+    expect(server.files.size).toBe(95);
+
+    const b = newDevice(); // fresh install, just signed in
+    const r = await new SyncEngine(b, new FakeRemote(server)).sync();
+    expect(r.ok).toBe(true);
+    expect(r.downloaded).toBe(95);
+    expect(r.morePhotos).toBe(0);
+    expect(await b.photoBlobs.count()).toBe(95);
+    expect((await b.suppliers.get(s.id))?.companyName).toBe('Many photos');
+  });
+});

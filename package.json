@@ -1,6 +1,6 @@
 {
   "name": "yiwu-supplier-manager",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Offline-first mobile PWA for capturing and comparing Yiwu market suppliers",
   "scripts": {
     "dev": "vite --host",

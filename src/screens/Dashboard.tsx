@@ -28,6 +28,7 @@ export function SyncCard() {
             {st.pending > 0 && <span className="badge">{st.pending} pending</span>}
           </div>
           <div className="small">{text[st.state]}</div>
+          {st.downloading > 0 && <div className="small">Downloading {st.downloading} photo(s) from the cloud… keep the app open on Wi-Fi.</div>}
           {st.lastError && st.state === 'error' && <div className="small err">{st.lastError}</div>}
           {st.state !== 'local_only' && <div className="small muted">Last successful sync: {timeAgo(st.lastSyncOkAt)}</div>}
         </div>

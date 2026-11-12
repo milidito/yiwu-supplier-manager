@@ -24,6 +24,10 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+        env:
+          # Public values (safe to publish): new installs point at this project and only need "Sign in".
+          VITE_DEFAULT_SUPABASE_URL: https://twbbizgoapgsschvataf.supabase.co
+          VITE_DEFAULT_SUPABASE_KEY: sb_publishable_NLWSWN-_m57wWt7WNO03RA_6ZLn-I4C
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
