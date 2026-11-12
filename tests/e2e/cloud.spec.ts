@@ -42,5 +42,9 @@ test('configure cloud, sign in, capture offline, auto-sync when back online', as
   expect(sql("select count(*) from photos p join suppliers s on s.id=p.supplier_id where s.company_name='Cloud Test Supplier'")).toBe('1');
   await page.goto('./#/');
   await expect(page.getByTestId('sync-card')).toContainText('All changes are backed up');
+  // the daily cloud snapshot was created after the successful sync
+  await expect(page.getByText(/Last just now · older ones kept/)).toBeVisible({ timeout: 10000 });
+  await page.goto('./#/settings');
+  await expect(page.getByRole('button', { name: 'Restore' }).first()).toBeVisible({ timeout: 10000 });
   await page.screenshot({ path: 'test-results/screens/11-synced-dashboard.png', fullPage: true });
 });

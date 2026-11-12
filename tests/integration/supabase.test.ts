@@ -5,6 +5,7 @@ import { AppDB } from '../../src/db';
 import * as repo from '../../src/repo';
 import { SyncEngine } from '../../src/sync/engine';
 import { SupabaseRemote } from '../../src/sync/supabaseRemote';
+import { listSnapshots, maybeSnapshot, restoreSnapshot } from '../../src/sync/snapshots';
 
 /**
  * Runs only via `npm run test:integration` (tests/integration/run.sh), which starts
@@ -93,15 +94,30 @@ describe.skipIf(!ON)('Supabase integration (Postgres + PostgREST + RLS + supabas
     expect((await p1.db.suppliers.get(s.id))?.notes).toBe('from phone 2 (newer)');
     expect(sql('select notes from suppliers')).toBe('from phone 2 (newer)');
 
-    // ---- delete on phone 2 propagates; cloud files removed ----
+    // ---- daily snapshot in real (private, per-user) storage ----
+    const snap = await maybeSnapshot(p1.db, p1.remote, A, true);
+    expect(snap).toMatch(/\.zip$/);
+    const snaps = await listSnapshots(p1.remote, A);
+    expect(snaps.map((x) => x.name)).toContain(snap);
+    expect(await listSnapshots(other.remote, A).catch(() => [])).toHaveLength(0); // other account can't list mine
+
+    // ---- delete on phone 2 propagates; files are KEPT (restorable) ----
     await repo.deleteSupplier(s.id, p2.db);
     const r6 = await p2.engine.sync();
     expect(r6.ok).toBe(true);
     expect(sql('select deleted from suppliers')).toBe('t');
     expect(sql('select bool_and(deleted) from photos')).toBe('t');
-    expect((await files()).filter((f) => f.startsWith(`${A}/`))).toHaveLength(0);
+    expect((await files()).filter((f) => f.startsWith(`${A}/`) && f.endsWith('.jpg'))).toHaveLength(2);
     await p1.engine.sync();
     expect((await p1.db.suppliers.get(s.id))?.deleted).toBe(1);
-    expect(await p1.db.photoBlobs.count()).toBe(0);
+
+    // ---- restore from the cloud snapshot on phone 1 -> back everywhere ----
+    const rr = await restoreSnapshot(p1.db, p1.remote, A, snap!);
+    expect(rr.restored).toBeGreaterThanOrEqual(5); // supplier, product, quote, 2 photos
+    expect((await p1.engine.sync()).ok).toBe(true);
+    expect(sql('select deleted from suppliers')).toBe('f');
+    expect(sql('select count(*) from photos where not deleted')).toBe('2');
+    await p2.engine.sync();
+    expect((await p2.db.suppliers.get(s.id))?.deleted).toBe(0);
   });
 });

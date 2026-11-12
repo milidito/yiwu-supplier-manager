@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { AppDB } from '../../src/db';
 import * as repo from '../../src/repo';
 import { SyncEngine } from '../../src/sync/engine';
+import { listSnapshots, maybeSnapshot, restoreSnapshot } from '../../src/sync/snapshots';
+import { exportBackup, importBackup } from '../../src/backup';
 import { FakeRemote, FakeServer } from '../helpers/fakeRemote';
 
 let n = 0;
@@ -165,7 +167,7 @@ describe('sync engine', () => {
     expect(log.some((l) => l.message.includes('renumbered to YW-002'))).toBe(true);
   });
 
-  it('propagates deletes and removes cloud photo files', async () => {
+  it('propagates deletes but keeps photo files (cloud + phone) so Trash can restore them', async () => {
     const a = newDevice();
     const b = newDevice();
     const ea = new SyncEngine(a, new FakeRemote(server));
@@ -177,11 +179,21 @@ describe('sync engine', () => {
     expect(server.files.size).toBe(1);
     await repo.deleteSupplier(s.id, a);
     await ea.sync();
-    expect(server.files.size).toBe(0);
+    expect(server.files.size).toBe(1); // file kept in the cloud
     expect(server.tables.suppliers.get(s.id)?.deleted).toBe(true);
+    expect(server.tables.photos.get(ph.id)?.deleted).toBe(true);
     await eb.sync();
     expect((await b.suppliers.get(s.id))?.deleted).toBe(1);
-    expect(await b.photoBlobs.get(ph.id)).toBeUndefined();
+    expect(await b.photoBlobs.get(ph.id)).toBeTruthy(); // still on the phone
+
+    // restore from Trash on phone B -> comes back everywhere
+    await repo.restoreSupplier(s.id, b);
+    expect((await b.photos.get(ph.id))?.deleted).toBe(0);
+    await eb.sync();
+    await ea.sync();
+    expect((await a.suppliers.get(s.id))?.deleted).toBe(0);
+    expect((await a.photos.get(ph.id))?.deleted).toBe(0);
+    expect(await a.photoBlobs.get(ph.id)).toBeTruthy();
   });
 
   it('does not push if download failed (protects newer cloud data)', async () => {
@@ -192,5 +204,74 @@ describe('sync engine', () => {
     const r = await new SyncEngine(d, remote).sync();
     expect(r.ok).toBe(false);
     expect(remote.pushCalls).toBe(0);
+  });
+});
+
+describe('trash, snapshots and restore', () => {
+  it('restores only what was deleted together with the supplier', async () => {
+    const d = newDevice();
+    const s = await repo.createSupplier({ companyName: 'T' }, d);
+    const p1 = await repo.createProduct({ supplierId: s.id, name: 'kept-deleted' }, d);
+    await repo.deleteProduct(p1.id, d); // deleted earlier, separately
+    await sleep(3);
+    const p2 = await repo.createProduct({ supplierId: s.id, name: 'restored' }, d);
+    const q2 = await repo.createQuotation({ supplierId: s.id, productId: p2.id, price: 2 }, d);
+    await sleep(3);
+    await repo.deleteSupplier(s.id, d);
+    await repo.restoreSupplier(s.id, d);
+    expect((await d.products.get(p2.id))?.deleted).toBe(0);
+    expect((await d.quotations.get(q2.id))?.deleted).toBe(0);
+    expect((await d.products.get(p1.id))?.deleted).toBe(1);
+    await repo.restoreProduct(p1.id, d);
+    expect((await d.products.get(p1.id))?.deleted).toBe(0);
+  });
+
+  it('gives a restored supplier a new code if its code was reused', async () => {
+    const d = newDevice();
+    const s = await repo.createSupplier({}, d);
+    await repo.deleteSupplier(s.id, d);
+    const other = await repo.createSupplier({}, d);
+    await repo.changeSupplierCode(other.id, 'YW-001', d);
+    await repo.restoreSupplier(s.id, d);
+    expect((await d.suppliers.get(s.id))?.code).toBe('YW-002'); // YW-002 was freed when the other supplier took YW-001
+  });
+
+  it('daily snapshot is uploaded once, kept, and restores deleted data', async () => {
+    const server = new FakeServer();
+    const d = newDevice();
+    const remote = new FakeRemote(server);
+    const s = await repo.createSupplier({ companyName: 'Snap Co', wechatId: 'snap' }, d);
+    const p = await repo.createProduct({ supplierId: s.id, name: 'Widget' }, d);
+    await repo.createQuotation({ supplierId: s.id, productId: p.id, price: 3.3 }, d);
+    await new SyncEngine(d, remote).sync();
+    const n1 = await maybeSnapshot(d, remote, 'user-a');
+    expect(n1).toMatch(/\.zip$/);
+    expect(await maybeSnapshot(d, remote, 'user-a')).toBeNull(); // not again within a day
+    await sleep(5);
+    await maybeSnapshot(d, remote, 'user-a', true); // forced
+    const list = await listSnapshots(remote, 'user-a');
+    expect(list).toHaveLength(2);
+    expect(list[1].name).toBe(n1); // newest first, older kept
+
+    // accident: delete + wrong edit, synced to cloud
+    await repo.deleteSupplier(s.id, d);
+    await new SyncEngine(d, remote).sync();
+    const r = await restoreSnapshot(d, remote, 'user-a', n1!);
+    expect(r.restored).toBe(3); // supplier, product, quote
+    expect((await d.suppliers.get(s.id))?.deleted).toBe(0);
+    expect((await d.quotations.where('productId').equals(p.id).first())?.price).toBe(3.3);
+    await new SyncEngine(d, remote).sync();
+    expect(server.tables.suppliers.get(s.id)?.deleted).toBe(false);
+  });
+
+  it('plain backup import keeps newer local edits', async () => {
+    const d = newDevice();
+    const s = await repo.createSupplier({ notes: 'old' }, d);
+    const { blob } = await exportBackup(d, false);
+    await sleep(3);
+    await repo.updateSupplier(s.id, { notes: 'newer' }, d);
+    const r = await importBackup(blob, d);
+    expect(r.skipped).toBe(1);
+    expect((await d.suppliers.get(s.id))?.notes).toBe('newer');
   });
 });

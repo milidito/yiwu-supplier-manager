@@ -8,6 +8,10 @@ import { syncRunner } from '../sync/runner';
 import { Empty, Field, Header, Section, Select, toast } from '../ui/components';
 import { useSettings, useSyncStatus } from '../ui/hooks';
 import { SyncCard } from './Dashboard';
+import { listSnapshots, maybeSnapshot, restoreSnapshot, snapshotDate } from '../sync/snapshots';
+import { unsavedPhotoIds } from '../devicePhotos';
+import { openSaveToPhotos } from '../ui/saveSheet';
+import { backupToFiles } from '../ui/safety';
 
 export function More() {
   const items: [string, string, string][] = [
@@ -15,6 +19,7 @@ export function More() {
     ['#/compare', '⚖️', 'Compare prices'],
     ['#/locations', '📍', 'Locations'],
     ['#/sync', '🔄', 'Sync status, log & conflicts'],
+    ['#/trash', '🗑️', 'Trash (restore deleted items)'],
     ['#/settings', '⚙️', 'Settings, cloud & backup'],
     ['#/help', '❔', 'How to use / install'],
   ];
@@ -207,7 +212,21 @@ function BackupSection() {
         One .zip with all suppliers, products and quotes as <b>CSV</b> (opens in Excel / Google Sheets) and <b>JSON</b>, plus every photo named by supplier ID. Last backup: <b>{lastBackup ? timeAgo(lastBackup) : 'never'}</b>.
       </div>
       <div className="row">
-        <button className="btn btn-primary grow" disabled={!!busy} onClick={() => doExport(true)} data-testid="export-share">
+        <button
+          className="btn btn-primary grow"
+          disabled={!!busy}
+          onClick={async () => {
+            setBusy('Preparing backup…');
+            try {
+              await backupToFiles();
+            } catch (e) {
+              alert(`Backup failed: ${(e as Error).message}`);
+            } finally {
+              setBusy(null);
+            }
+          }}
+          data-testid="export-share"
+        >
           Share / Save to Files
         </button>
         <button className="btn btn-outline grow" disabled={!!busy} onClick={() => doExport(false)} data-testid="export-download">
@@ -238,6 +257,112 @@ function BackupSection() {
         />
       </label>
       {busy && <div className="small">{busy}</div>}
+    </Section>
+  );
+}
+
+function SnapshotSection() {
+  const st = useSyncStatus();
+  const [list, setList] = useState<{ name: string; size: number | null }[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const cloudOn = st.state !== 'local_only' && st.state !== 'signed_out';
+  const load = async () => {
+    setErr(null);
+    try {
+      const uid = await syncRunner.remote?.getUserId();
+      if (!uid || !syncRunner.remote) return;
+      setList(await listSnapshots(syncRunner.remote, uid));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  useEffect(() => {
+    if (cloudOn && navigator.onLine) void load();
+  }, [cloudOn]);
+  if (!cloudOn) {
+    return (
+      <Section title="Cloud snapshots (version history)">
+        <div className="small muted">After cloud sync is set up, a dated copy of all your records is saved in the cloud once a day and old copies are kept, so a wrong edit or delete can always be undone.</div>
+      </Section>
+    );
+  }
+  return (
+    <Section title="Cloud snapshots (version history)">
+      <div className="small">A dated copy of all records is saved in your cloud once a day after syncing. Old snapshots are never overwritten. Photos are kept in the cloud even if you delete them here. Restoring brings back anything deleted since that day and keeps your newer edits.</div>
+      <div className="row">
+        <button
+          className="btn btn-outline grow"
+          disabled={!!busy || !navigator.onLine}
+          onClick={async () => {
+            setBusy('Saving snapshot…');
+            try {
+              const uid = await syncRunner.remote!.getUserId();
+              if (uid) await maybeSnapshot(db, syncRunner.remote!, uid, true);
+              await load();
+              toast('Snapshot saved in the cloud');
+            } catch (e) {
+              setErr((e as Error).message);
+            } finally {
+              setBusy(null);
+            }
+          }}
+        >
+          Save a snapshot now
+        </button>
+        <button className="btn btn-sm" onClick={load} disabled={!navigator.onLine}>
+          Refresh
+        </button>
+      </div>
+      {busy && <div className="small">{busy}</div>}
+      {err && <div className="small err">{err}</div>}
+      {list && !list.length && <div className="small muted">No snapshots yet.</div>}
+      {list?.slice(0, 30).map((f) => (
+        <div key={f.name} className="list-item">
+          <div className="grow">
+            <div className="li-title">{fmtDateTime(snapshotDate(f.name)?.toISOString() ?? f.name)}</div>
+            <div className="small muted">{f.size ? `${Math.max(1, Math.round(f.size / 1024))} KB` : ''}</div>
+          </div>
+          <button
+            className="btn btn-sm"
+            disabled={!!busy}
+            onClick={async () => {
+              if (!confirm('Restore this snapshot? Deleted items come back; your newer edits are kept.')) return;
+              setBusy('Restoring…');
+              try {
+                const uid = await syncRunner.remote!.getUserId();
+                const r = await restoreSnapshot(db, syncRunner.remote!, uid!, f.name);
+                alert(`Restored.\nAdded: ${r.added}\nBrought back: ${r.restored}\nUpdated: ${r.updated}\nUnchanged: ${r.skipped}`);
+                syncRunner.kick(500);
+              } catch (e) {
+                setErr((e as Error).message);
+              } finally {
+                setBusy(null);
+              }
+            }}
+          >
+            Restore
+          </button>
+        </div>
+      ))}
+    </Section>
+  );
+}
+
+function PhotosSection() {
+  const s = useSettings();
+  const unsaved = useLiveQuery(() => unsavedPhotoIds(), []) ?? [];
+  return (
+    <Section title="iPhone Photos (camera roll)">
+      <div className="small">
+        iPhone does not let web apps save into Photos automatically. The app gives you a one-tap “Save to Photos”: each copy gets a label with the supplier ID, photo type and booth burned in. In the share screen tap <b>“Save N Images”</b>; if your iOS does not show it, use <b>“Save to Files”</b>. Most reliable alternative: take photos with the iPhone Camera app (saved to Photos/iCloud automatically) and add them here with <b>🖼️ Gallery</b>.
+      </div>
+      <label className="check">
+        <input type="checkbox" checked={s.offerSaveToPhotos} onChange={(e) => saveSettings({ offerSaveToPhotos: e.target.checked })} /> Offer “Save to Photos” right after each photo
+      </label>
+      <button className="btn btn-primary" disabled={!unsaved.length} onClick={() => openSaveToPhotos(unsaved)} data-testid="save-unsaved-photos">
+        {unsaved.length ? `Save ${Math.min(unsaved.length, 20)} of ${unsaved.length} unsaved photo(s) to Photos` : 'All photos already saved to Photos'}
+      </button>
     </Section>
   );
 }
@@ -346,7 +471,9 @@ export function Settings() {
       <Header title="Settings" backTo="/more" />
       <SyncCard />
       <CloudSection />
+      <SnapshotSection />
       <BackupSection />
+      <PhotosSection />
       <PreferencesSection />
       <StorageSection />
       <Section title="Privacy">

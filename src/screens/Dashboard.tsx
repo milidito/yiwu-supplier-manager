@@ -5,6 +5,7 @@ import { navigate } from '../router';
 import { syncRunner } from '../sync/runner';
 import { Empty, Section } from '../ui/components';
 import { isIos, isStandalone, useProducts, useQuotations, useSuppliers, useSyncStatus } from '../ui/hooks';
+import { SafetyCard } from '../ui/safety';
 import { SupplierCard, useCoverPhotos } from './SupplierList';
 
 export function SyncCard() {
@@ -129,6 +130,8 @@ export function Dashboard() {
           📦 Products
         </a>
       </div>
+
+      <SafetyCard />
 
       {due.length > 0 && (
         <Section title={`Follow-up due (${due.length})`}>

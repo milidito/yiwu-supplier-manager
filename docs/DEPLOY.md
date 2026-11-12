@@ -1,20 +1,24 @@
-# Putting the app on your phone (hosting): needs an account, so only after approval
+# Putting the app on your phone (permanent hosting)
 
-The app is a folder of static files (`dist/`, also delivered as `yiwu-supplier-manager-dist.zip`). A phone can only install it as an offline app from an **HTTPS** address. Any free static host works. Nothing has been created yet.
+The app is a folder of static files (`dist/`). A phone can only install it as an offline app from an **HTTPS** address. Nothing has been created yet; each option needs a free account.
 
-| Option | Account | Cost | Effort | Notes |
-|---|---|---|---|---|
-| **Netlify Drop** (recommended to start) | Netlify (free) | $0 | Drag the `dist` folder onto app.netlify.com/drop | Fastest; claim the site with a free account so it stays online |
-| Cloudflare Pages | Cloudflare (free) | $0 | Upload `dist` (Direct Upload) or connect GitHub | Very fast CDN |
-| GitHub Pages | GitHub (free) | $0 | Push the repo, enable Pages on `dist` (or a GitHub Action) | Good for continuing development |
+## Recommended: GitHub + GitHub Pages (free, permanent)
+Why: the address never expires, every app version is kept (the source code is also a backup), and updates deploy automatically.
+1. Create a free account at https://github.com.
+2. New repository: name it `yiwu-supplier-manager` and make it **Public**. Pages on private repos needs a paid GitHub plan. The code holds no data and no keys: your data lives in your Supabase project, and you type the keys into the app on the phone.
+3. Push the code (or connect GitHub to Claude: claude.ai → Settings → Connectors → GitHub, then Claude pushes it for you).
+4. Repo → **Settings → Pages → Source: GitHub Actions**. The included workflow `.github/workflows/deploy.yml` tests, builds and publishes on every push.
+5. The app is at `https://<your-username>.github.io/yiwu-supplier-manager/`.
 
-The app uses hash routing and relative paths, so it works on any of these with no server configuration, including in a sub-folder.
+## Alternative: Netlify (free)
+Create an account at https://app.netlify.com, then **Add new site → Deploy manually**, and drag the `dist` folder in. Sites in your account stay online permanently. Updates mean dragging a new `dist` each time.
 
 ## After deploying
-1. Open the HTTPS link on the phone: **Safari** (iPhone) or **Chrome** (Android).
-2. Install: iPhone Share → **Add to Home Screen**; Android ⋮ → **Install app**.
-3. Open it from the icon once while online, then test in airplane mode (`docs/TESTING.md`).
-4. **Do this in Canada before the trip.** Once installed, the app opens offline, so the host does not need to be reachable from China. Updates download the next time the app is opened online.
+1. Open the HTTPS link on the iPhone in **Safari**, then Share → **Add to Home Screen**. Always open the app from that icon.
+2. Open it once online, then test in airplane mode (`docs/TESTING.md`).
+3. **Do this in Canada before the trip.** Once installed, the app opens offline, so the host does not need to be reachable from China. Updates download the next time the app is opened online (github.io and netlify.app can be slow or blocked in mainland China).
 
 ## Updating
-`npm run build` and re-upload `dist/`. The installed app updates itself on the next online launch. Data on the phone is not touched by updates.
+Push to `main` (GitHub) or re-upload `dist/` (Netlify). The installed app updates on the next online launch. Data on the phone is never touched by updates.
+
+Important: the app's data is tied to the web address. Keep using the same address; if you ever move to a new one, first make a backup .zip and restore it there, or sign in to cloud sync on the new address.

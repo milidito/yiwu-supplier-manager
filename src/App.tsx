@@ -1,6 +1,7 @@
 import { Compare } from './screens/Compare';
 import { Dashboard } from './screens/Dashboard';
 import { Help } from './screens/Help';
+import { Trash } from './screens/Trash';
 import { Locations } from './screens/Locations';
 import { ProductDetail, ProductEditor, ProductsList, QuoteEditor } from './screens/Products';
 import { More, Settings, SyncScreen } from './screens/Settings';
@@ -9,6 +10,7 @@ import { SupplierEditor } from './screens/SupplierEditor';
 import { SupplierList } from './screens/SupplierList';
 import { match, navigate, useRoute } from './router';
 import { ToastHost } from './ui/components';
+import { SaveSheetHost } from './ui/saveSheet';
 import { useOnline } from './ui/hooks';
 
 function Screen() {
@@ -32,6 +34,7 @@ function Screen() {
   if (p === '/settings') return <Settings />;
   if (p === '/sync') return <SyncScreen />;
   if (p === '/help') return <Help />;
+  if (p === '/trash') return <Trash />;
   return <Dashboard />;
 }
 
@@ -52,7 +55,7 @@ function Nav() {
       <a href="#/compare" className={active(['/compare']) ? 'on' : ''}>
         <span>⚖️</span>Compare
       </a>
-      <a href="#/more" className={active(['/more', '/settings', '/sync', '/products', '/p/', '/q/', '/locations', '/help']) ? 'on' : ''}>
+      <a href="#/more" className={active(['/more', '/settings', '/sync', '/products', '/p/', '/q/', '/locations', '/help', '/trash']) ? 'on' : ''}>
         <span>☰</span>More
       </a>
     </nav>
@@ -73,6 +76,7 @@ export function App() {
       </main>
       <Nav />
       <ToastHost />
+      <SaveSheetHost />
     </div>
   );
 }

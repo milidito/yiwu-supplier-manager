@@ -204,12 +204,12 @@ export function SupplierDetail({ id }: { id: string }) {
         <button
           className="btn btn-danger-outline"
           onClick={async () => {
-            if (!confirm(`Delete ${s.code} with all its products, prices and photos?`)) return;
+            if (!confirm(`Move ${s.code} with its products, prices and photos to Trash? You can restore it from More → Trash.`)) return;
             await deleteSupplier(id);
             navigate('/suppliers', true);
           }}
         >
-          Delete supplier
+          Move supplier to Trash
         </button>
       </Section>
     </div>

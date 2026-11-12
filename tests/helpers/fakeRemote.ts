@@ -46,4 +46,12 @@ export class FakeRemote implements Remote {
     return b;
   }
   async deletePhoto(path: string) { this.server.files.delete(path); }
+  async uploadFile(path: string, blob: Blob) { this.server.files.set(path, blob); }
+  async downloadFile(path: string) { return this.downloadPhoto(path); }
+  async listFiles(folder: string) {
+    return [...this.server.files.entries()]
+      .filter(([k]) => k.startsWith(folder + '/') && !k.slice(folder.length + 1).includes('/'))
+      .map(([k, b]) => ({ name: k.slice(folder.length + 1), size: b.size, createdAt: null }))
+      .sort((a, b) => b.name.localeCompare(a.name));
+  }
 }

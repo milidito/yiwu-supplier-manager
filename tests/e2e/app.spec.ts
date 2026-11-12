@@ -213,3 +213,49 @@ test('backup export (CSV/JSON/photos) and restore into a fresh phone', async ({ 
   await expect(p2.locator('.li-title', { hasText: 'Hair clip' })).toBeVisible();
   await ctx2.close();
 });
+
+test('save to Photos (labelled copies), trash & restore, copies card', async ({ page }) => {
+  await fresh(page);
+  await page.getByTestId('nav-add').click();
+  await page.getByTestId('capture-shop-input').setInputFiles(fx('shop.jpg'));
+  // after-capture prompt
+  await expect(page.getByTestId('toast-action')).toHaveText('Save to Photos');
+  await page.getByTestId('toast-action').click();
+  await expect(page.getByTestId('save-sheet')).toBeVisible();
+  const go = page.getByTestId('save-sheet-go');
+  await expect(go).toHaveText(/Save 1 to Photos/);
+  await page.screenshot({ path: 'test-results/screens/12-save-sheet.png' });
+  // desktop Chrome has no share sheet for files -> falls back to a .zip of labelled copies
+  const [dl] = await Promise.all([page.waitForEvent('download'), go.click()]);
+  const zip = await JSZip.loadAsync(readFileSync((await dl.path())!));
+  const names = Object.keys(zip.files);
+  expect(names).toEqual(['YW-001_shop_1.jpg']);
+  const jpg = await zip.file(names[0])!.async('uint8array');
+  expect(jpg.length).toBeGreaterThan(10_000);
+
+  await fillField(page, 'companyName', 'Trash Test Co');
+  await page.getByTestId('capture-card_front-input').setInputFiles(fx('card.jpg'));
+  await page.getByTestId('done').click();
+  await expect(page.getByTestId('detail-code')).toHaveText('YW-001');
+
+  // copies card on the dashboard
+  await page.goto('./#/');
+  await expect(page.getByText('Your copies')).toBeVisible();
+  await expect(page.getByText('1 photo(s) not saved to Photos yet')).toBeVisible();
+  await page.screenshot({ path: 'test-results/screens/13-dashboard-copies.png', fullPage: true });
+
+  // move to trash, then restore
+  await page.goto('./#/suppliers');
+  await page.getByTestId('supplier-row').click();
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('button', { name: 'Move supplier to Trash' }).click();
+  await expect(page).toHaveURL(/#\/suppliers$/);
+  await expect(page.getByText('No suppliers yet')).toBeVisible();
+  await page.goto('./#/trash');
+  await expect(page.getByTestId('trash-supplier')).toContainText('Trash Test Co');
+  await page.getByRole('button', { name: 'Restore' }).click();
+  await page.goto('./#/suppliers');
+  await expect(page.getByTestId('supplier-row')).toHaveCount(1);
+  await page.getByTestId('supplier-row').click();
+  await expect(page.getByTestId('photo-thumb')).toHaveCount(2); // photos came back too
+});

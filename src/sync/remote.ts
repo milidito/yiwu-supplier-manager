@@ -22,6 +22,11 @@ export interface Remote {
   uploadPhoto(path: string, blob: Blob, contentType: string): Promise<void>;
   downloadPhoto(path: string): Promise<Blob>;
   deletePhoto(path: string): Promise<void>;
+  /** generic private files (used for daily backup snapshots) */
+  uploadFile(path: string, blob: Blob, contentType: string): Promise<void>;
+  downloadFile(path: string): Promise<Blob>;
+  /** files directly inside a folder, e.g. "<userId>/backups" */
+  listFiles(folder: string): Promise<{ name: string; size: number | null; createdAt: string | null }[]>;
 }
 
 export function photoPath(userId: string, photoId: string) {

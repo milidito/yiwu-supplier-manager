@@ -21,7 +21,7 @@ import { thumbFromFull } from './images';
  *   photos/YW-001/YW-001_card_front_1.jpg ...                     every photo, named by supplier code
  */
 
-const LOCAL_ONLY_KEYS = ['dirty', 'baseUpdatedAt', 'syncedAt', 'blobState', 'uploadError'];
+const LOCAL_ONLY_KEYS = ['dirty', 'baseUpdatedAt', 'syncedAt', 'blobState', 'uploadError', 'savedToDevice'];
 
 function strip<T extends object>(r: T) {
   const o = { ...r } as Record<string, unknown>;
@@ -138,93 +138,106 @@ export async function exportBackup(d: AppDB = defaultDb, includePhotos = true): 
 export interface ImportResult {
   added: number;
   updated: number;
+  restored: number;
   skipped: number;
   photosAdded: number;
   renumbered: string[];
 }
 
+type Decision = 'add' | 'update' | 'undelete' | 'skip';
+
+/** newer edit wins; with `undelete`, records deleted on this phone but present in the backup come back. */
+function decide(local: { updatedAt: string; deleted: 0 | 1 } | undefined, incoming: { updatedAt: string; deleted: 0 | 1 }, undelete: boolean): Decision {
+  if (!local) return 'add';
+  if (undelete && local.deleted && !incoming.deleted) return 'undelete';
+  if (incoming.updatedAt > local.updatedAt) return 'update';
+  return 'skip';
+}
+
 /**
  * Restore / merge a backup into this device.
- * Records are matched by their UUID: newer edits win, nothing is deleted.
+ * Records are matched by their UUID: newer edits win, nothing on this phone is deleted.
+ * `undelete: true` (used for "restore from snapshot") also brings back records that were deleted since the backup.
  * Imported changes are marked pending so they also reach the cloud (uploads are idempotent).
  */
-export async function importBackup(file: Blob, d: AppDB = defaultDb): Promise<ImportResult> {
+export async function importBackup(file: Blob, d: AppDB = defaultDb, opts: { undelete?: boolean } = {}): Promise<ImportResult> {
   const zip = await JSZip.loadAsync(file);
   const dataFile = zip.file('data.json');
   if (!dataFile) throw new Error('Not a Yiwu Supplier Manager backup (data.json missing)');
   const data = JSON.parse(await dataFile.async('string'));
   if (data.app !== 'yiwu-supplier-manager') throw new Error('Not a Yiwu Supplier Manager backup');
 
-  const res: ImportResult = { added: 0, updated: 0, skipped: 0, photosAdded: 0, renumbered: [] };
+  const undelete = !!opts.undelete;
+  const res: ImportResult = { added: 0, updated: 0, restored: 0, skipped: 0, photosAdded: 0, renumbered: [] };
   const { codePrefix } = await getSettings(d);
-
+  const t = nowIso();
   const mark = <T extends object>(r: T) => ({ ...r, dirty: 1 as const, baseUpdatedAt: null, syncedAt: null });
+  const count = (dec: Decision) => {
+    if (dec === 'add') res.added++;
+    else if (dec === 'update') res.updated++;
+    else if (dec === 'undelete') res.restored++;
+    else res.skipped++;
+  };
+  const freeCode = async (wanted: string, selfId: string) => {
+    const clash = await d.suppliers.where('code').equals(wanted).filter((x) => !x.deleted && x.id !== selfId).count();
+    if (!clash) return wanted;
+    let max = 0;
+    await d.suppliers.each((x) => {
+      const n = parseCodeNumber(x.code, codePrefix);
+      if (n !== null && n > max) max = n;
+    });
+    const code = formatCode(codePrefix, max + 1);
+    res.renumbered.push(`${wanted} → ${code}`);
+    return code;
+  };
 
-  // suppliers (with code-collision handling)
   for (const s of data.suppliers as Supplier[]) {
     const local = await d.suppliers.get(s.id);
-    if (local) {
-      if (s.updatedAt > local.updatedAt) {
-        await d.suppliers.put({ ...local, ...mark(s), code: local.code });
-        res.updated++;
-      } else res.skipped++;
-      continue;
-    }
-    const clash = await d.suppliers.where('code').equals(s.code).filter((x) => !x.deleted).count();
-    let code = s.code;
-    if (clash) {
-      let max = 0;
-      await d.suppliers.each((x) => {
-        const n = parseCodeNumber(x.code, codePrefix);
-        if (n !== null && n > max) max = n;
-      });
-      code = formatCode(codePrefix, max + 1);
-      res.renumbered.push(`${s.code} → ${code}`);
-    }
-    await d.suppliers.add({ ...(mark(s) as Supplier), code });
-    res.added++;
+    const dec = decide(local, s, undelete);
+    count(dec);
+    if (dec === 'add') await d.suppliers.add({ ...(mark(s) as Supplier), code: await freeCode(s.code, s.id) });
+    else if (dec === 'update') await d.suppliers.put({ ...local!, ...mark(s), code: local!.code });
+    else if (dec === 'undelete') await d.suppliers.put({ ...local!, ...mark(s), deleted: 0, updatedAt: t, code: await freeCode(local!.code, s.id) });
   }
 
   for (const [table, rows] of [
     ['products', data.products as Product[]],
     ['quotations', data.quotations as Quotation[]],
   ] as const) {
-    const t = d[table] as unknown as import('dexie').Table<Product | Quotation, string>;
+    const tb = d[table] as unknown as import('dexie').Table<Product | Quotation, string>;
     for (const r of rows) {
-      const local = await t.get(r.id);
-      if (!local) {
-        await t.add(mark(r) as never);
-        res.added++;
-      } else if (r.updatedAt > local.updatedAt) {
-        await t.put({ ...local, ...mark(r) } as never);
-        res.updated++;
-      } else res.skipped++;
+      const local = await tb.get(r.id);
+      const dec = decide(local, r, undelete);
+      count(dec);
+      if (dec === 'add') await tb.add(mark(r) as never);
+      else if (dec === 'update') await tb.put({ ...local!, ...mark(r) } as never);
+      else if (dec === 'undelete') await tb.put({ ...local!, ...mark(r), deleted: 0, updatedAt: t } as never);
     }
   }
 
   for (const p of data.photos as (Photo & { file: string | null })[]) {
     const local = await d.photos.get(p.id);
-    if (local && !(p.updatedAt > local.updatedAt)) {
-      res.skipped++;
-      continue;
-    }
+    const dec = decide(local, p, undelete);
+    count(dec);
+    if (dec === 'skip') continue;
     const { file: fileName, ...meta } = p;
     const zf = fileName ? zip.file(fileName) : null;
-    const haveLocalBlob = local ? !!(await d.photoBlobs.get(p.id)) : false;
-    if (zf && !haveLocalBlob) {
+    let haveBlob = !!(await d.photoBlobs.get(p.id));
+    if (zf && !haveBlob) {
       const full = await zf.async('blob');
       const typed = new Blob([full], { type: meta.mime || 'image/jpeg' });
       await d.photoBlobs.put({ id: p.id, full: typed, thumb: await thumbFromFull(typed) });
       res.photosAdded++;
+      haveBlob = true;
     }
-    const hasBlob = haveLocalBlob || !!zf;
+    const blobState = local?.blobState === 'uploaded' && haveBlob ? 'uploaded' : haveBlob ? 'local' : 'remote_only';
     await d.photos.put({
       ...(local ?? {}),
       ...(mark(meta) as Photo),
-      blobState: local?.blobState === 'uploaded' ? 'uploaded' : hasBlob ? 'local' : 'remote_only',
+      ...(dec === 'undelete' ? { deleted: 0 as const, updatedAt: t } : {}),
+      blobState,
+      savedToDevice: local?.savedToDevice,
     });
-    if (local) res.updated++;
-    else res.added++;
   }
   return res;
 }

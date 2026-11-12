@@ -61,6 +61,15 @@ http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/storage/v1/object')) {
       const c = verify(req.headers.authorization);
       if (!c) return json(res, 400, { statusCode: '403', error: 'Unauthorized', message: 'not signed in' });
+      if (url.pathname.startsWith('/storage/v1/object/list/')) {
+        const { prefix = '' } = JSON.parse(buf.toString() || '{}');
+        if (prefix.split('/')[0] !== c.sub) return json(res, 200, []);
+        const items = [...files.entries()]
+          .filter(([k]) => k.startsWith(prefix + '/') && !k.slice(prefix.length + 1).includes('/'))
+          .map(([k, f]) => ({ name: k.slice(prefix.length + 1), id: crypto.randomUUID(), created_at: f.at, metadata: { size: f.data.length } }))
+          .sort((a, b) => b.name.localeCompare(a.name));
+        return json(res, 200, items);
+      }
       let rest = url.pathname.replace(/^\/storage\/v1\/object\/(authenticated\/)?/, '');
       if (req.method === 'DELETE') {
         const prefixes = JSON.parse(buf.toString()).prefixes || [];
@@ -85,7 +94,7 @@ http.createServer(async (req, res) => {
             if (/filename=|content-type/i.test(head) && !/name="cacheControl"/.test(head)) { data = part.subarray(sep + 4); type = (/content-type:\s*(.+)/i.exec(head) || [])[1] || 'application/octet-stream'; }
           }
         }
-        files.set(path, { data, type });
+        files.set(path, { data, type, at: new Date().toISOString() });
         return json(res, 200, { Key: `${bucket}/${path}`, Id: crypto.randomUUID() });
       }
       if (req.method === 'GET') {

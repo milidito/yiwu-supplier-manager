@@ -1,6 +1,7 @@
 import { db, getMeta, setMeta } from '../db';
 import { onLocalChange, pendingCount } from '../repo';
 import { SyncEngine, type SyncResult } from './engine';
+import { maybeSnapshot } from './snapshots';
 import { SupabaseRemote } from './supabaseRemote';
 
 /**
@@ -153,6 +154,13 @@ class Runner {
       if (res.ok) {
         this.failures = 0;
         this.set({ state: 'synced', lastError: null });
+        // daily point-in-time backup in the cloud (never overwritten)
+        try {
+          const uid = await this.remote.getUserId();
+          if (uid) await maybeSnapshot(db, this.remote, uid);
+        } catch (e) {
+          await db.syncLog.add({ at: new Date().toISOString(), level: 'warn', message: `Cloud snapshot failed (will retry): ${e instanceof Error ? e.message : String(e)}` });
+        }
       } else {
         this.failures++;
         this.set({ state: 'error', lastError: res.errors.join('; ') || 'Sync failed' });

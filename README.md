@@ -2,7 +2,7 @@
 
 Offline-first, mobile-first supplier CRM for walking the Yiwu market: capture a supplier (ID, photos, WeChat, phone, district/floor/booth, products, prices) in about a minute with no internet, then search, compare quotes and back up or sync later.
 
-**Status (v0.1.0, 12 Nov 2026):** working MVP. Local/offline features are implemented and tested. Cloud sync is implemented and tested against a local Postgres + PostgREST stand-in for Supabase. **No real Supabase project or hosting has been created yet.** That needs the owner's approval (see `docs/CLOUD-SETUP.md` and `docs/DEPLOY.md`).
+**Status (v0.2.0, 12 Nov 2026):** working MVP. Local/offline features are implemented and tested. Cloud sync is implemented and tested against a local Postgres + PostgREST stand-in for Supabase. **No real Supabase project or hosting has been created yet.** That needs the owner's approval (see `docs/CLOUD-SETUP.md` and `docs/DEPLOY.md`).
 
 ## Stack and why
 
@@ -28,8 +28,15 @@ Offline-first, mobile-first supplier CRM for walking the Yiwu market: capture a 
 - Follow-up date/task, own 1–5 rating, supplier type (marked as your own observation), status pipeline.
 - Backup: one .zip with `suppliers.csv`, `products.csv`, `quotations.csv`, `photos.csv` (UTF-8 with BOM so Chinese text opens correctly in Excel), `data.json`, and all photos named `photos/YW-001/YW-001_card_front_1.jpg`. Restore/merge from the zip. Share sheet on phones.
 - Offline: install banner, offline bar, persistent-storage request, storage usage display.
-- Cloud sync (code + local stand-in tests): email/password sign-in; automatic sync on app open, back online, after edits, every 60 s while changes are pending; manual "Sync now"; retry with backoff; pending/synced/error states; sync log; conflicts list keeps the discarded version; deletions sync and remove cloud photo files; supplier-code collisions between two offline phones are renumbered and logged.
+- Cloud sync (code + tests against a local stand-in): email/password sign-in; automatic sync on app open, back online, after edits, every 60 s while changes are pending; manual "Sync now"; retry with backoff; pending/synced/error states; sync log; conflicts list keeps the discarded version; deletions sync and remove cloud photo files; supplier-code collisions between two offline phones are renumbered and logged.
 - Security: only the public anon/publishable key is used in the app (it refuses a service_role/secret key). RLS on every table and on storage, so each row and photo belongs to `auth.uid()`. Private photo bucket. Ownership cannot be changed by updates.
+
+### Added in v0.2.0: copies of the data in several places
+- **Your copies card** on the dashboard: app, cloud sync, daily cloud snapshot, backup file, iPhone Photos, each with its status and a one-tap fix.
+- **Save to iPhone Photos:** prepare labelled copies (supplier ID, photo type, company, booth and date burned into a caption bar), then one tap opens the iOS share sheet ("Save N Images" / "Save to Files"). The prompt appears right after each photo (can be switched off), plus a batch "save all unsaved" option. On computers it downloads a .zip instead.
+- **Daily cloud snapshots (version history):** after a successful sync, at most once a day, a dated zip of all records goes to `<user>/backups/` in private storage. Snapshots are never overwritten. Restore from Settings brings back anything deleted since then and keeps newer edits.
+- **Trash:** deletes are soft everywhere. Suppliers, products, quotes and photos can be restored, and photo files are kept on the phone and in the cloud.
+- GitHub Pages deploy workflow (`.github/workflows/deploy.yml`).
 
 ### Planned (not built)
 - Persian (فارسی) / bilingual UI with RTL.
@@ -37,7 +44,7 @@ Offline-first, mobile-first supplier CRM for walking the Yiwu market: capture a 
 - Multi-user team accounts (the schema is single-owner by design today).
 - Field-level merge for conflicts (today: whole-record last-write-wins plus kept copy).
 - PDF quote sheets, currency rates fetched online.
-- Native background upload while the app is closed (not possible for iPhone PWAs, see below).
+- Native background upload and silent camera-roll saving (needs a native iOS app via Capacitor + Apple Developer account; not possible for web apps).
 
 ## Background sync: what to expect
 - **iPhone (Safari/home-screen app):** no Background Sync API. Uploads happen while the app is open and online. Open the app on Wi-Fi in the evening and wait for "Synced".

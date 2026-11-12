@@ -216,7 +216,7 @@ export function PhotoThumb(props: { photo: Photo; onClick?: () => void; showKind
  */
 export function CaptureButton(props: {
   label: ReactNode;
-  onFiles: (files: File[]) => void | Promise<void>;
+  onFiles: (files: File[]) => unknown;
   gallery?: boolean;
   className?: string;
   testId?: string;
@@ -263,26 +263,43 @@ export const KIND_ICONS: Record<PhotoKind, string> = {
 };
 
 // ---------------- toast ----------------
-let toastFn: ((m: string) => void) | null = null;
-export function toast(m: string) {
-  toastFn?.(m);
+export interface ToastAction {
+  label: string;
+  onClick: () => void | Promise<unknown>;
+}
+let toastFn: ((m: string, a?: ToastAction) => void) | null = null;
+export function toast(m: string, action?: ToastAction) {
+  toastFn?.(m, action);
 }
 export function ToastHost() {
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ m: string; a?: ToastAction } | null>(null);
   useEffect(() => {
     let t: ReturnType<typeof setTimeout>;
-    toastFn = (m) => {
-      setMsg(m);
+    toastFn = (m, a) => {
+      setMsg({ m, a });
       clearTimeout(t);
-      t = setTimeout(() => setMsg(null), 2600);
+      t = setTimeout(() => setMsg(null), a ? 6000 : 2600);
     };
     return () => {
       toastFn = null;
     };
   }, []);
   return msg ? (
-    <div className="toast" role="status">
-      {msg}
+    <div className="toast" role="status" data-testid="toast">
+      <span>{msg.m}</span>
+      {msg.a && (
+        <button
+          className="toast-btn"
+          data-testid="toast-action"
+          onClick={() => {
+            const a = msg.a!;
+            setMsg(null);
+            void a.onClick();
+          }}
+        >
+          {msg.a.label}
+        </button>
+      )}
     </div>
   ) : null;
 }

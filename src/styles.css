@@ -196,3 +196,14 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
 .pre { font-size: 11px; background: #f5f7f8; padding: 8px; border-radius: 8px; overflow-x: auto; max-height: 260px; }
 .log-warn { color: var(--warn); } .log-error { color: var(--err); }
 ol, ul { padding-left: 20px; margin: 0; } li { margin-bottom: 6px; }
+.toast { display: flex; align-items: center; gap: 12px; width: max-content; min-width: 260px; }
+.toast > span { flex: 1; }
+.toast-btn { background: #fff; color: var(--brand); border: 0; border-radius: 8px; font-weight: 700; padding: 8px 12px; min-height: 40px; white-space: nowrap; }
+.safety-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.safety-row:last-child { border-bottom: 0; }
+.safety-ico { width: 28px; text-align: center; font-size: 18px; }
+.ok-txt { color: var(--ok); font-weight: 700; } .warn-txt { color: var(--warn); font-weight: 700; } .off-txt { color: var(--muted); font-weight: 700; }
+.sheet-backdrop { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: #fff; width: 100%; max-width: 640px; border-radius: 18px 18px 0 0; padding: 16px 16px calc(16px + var(--safe-b)); display: flex; flex-direction: column; gap: 12px; }
+.sheet h2 { margin: 0; font-size: 18px; }
+.btn-big { min-height: 58px; font-size: 18px; }

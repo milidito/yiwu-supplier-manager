@@ -1,13 +1,19 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { db, type Photo, type PhotoKind, PHOTO_KIND_LABELS, PHOTO_KIND_ORDER } from '../db';
-import { addPhoto, deletePhoto, updatePhoto } from '../repo';
+import { openSaveToPhotos } from './saveSheet';
+import { addPhoto, deletePhoto, getSettings, updatePhoto } from '../repo';
 import { CaptureButton, KIND_ICONS, PhotoThumb, Select, toast, useBlobUrl } from './components';
 
 /** Save camera/gallery files as photos of a supplier (and optionally a product). */
 export async function savePhotos(files: File[], supplierId: string, kind: PhotoKind, productId: string | null = null) {
-  for (const f of files) await addPhoto({ supplierId, kind, file: f, productId });
-  toast(`${files.length > 1 ? `${files.length} photos` : 'Photo'} saved on this phone`);
+  const ids: string[] = [];
+  for (const f of files) ids.push((await addPhoto({ supplierId, kind, file: f, productId })).id);
+  const msg = `${files.length > 1 ? `${files.length} photos` : 'Photo'} saved in the app`;
+  const { offerSaveToPhotos } = await getSettings();
+  if (offerSaveToPhotos) toast(msg, { label: 'Save to Photos', onClick: () => openSaveToPhotos(ids) });
+  else toast(msg);
+  return ids;
 }
 
 export function usePhotos(supplierId: string | null | undefined, productId?: string | null) {
@@ -165,10 +171,13 @@ export function PhotoViewer(props: { photoIds: string[]; startId: string; onClos
             key={photo.id}
             onBlur={(e) => e.target.value !== photo.caption && updatePhoto(photo.id, { caption: e.target.value })}
           />
+          <button className="btn btn-dark" onClick={() => openSaveToPhotos([photo.id])} disabled={!url}>
+            ⤓ Photos
+          </button>
           <button
             className="btn btn-danger"
             onClick={async () => {
-              if (!confirm('Delete this photo?')) return;
+              if (!confirm('Move this photo to Trash?')) return;
               await deletePhoto(photo.id);
               if (props.photoIds.length <= 1) props.onClose();
               else setIdx(Math.max(0, idx - 1));
@@ -178,7 +187,8 @@ export function PhotoViewer(props: { photoIds: string[]; startId: string; onClos
           </button>
         </div>
         <div className="muted-light small">
-          {photo.blobState === 'local' ? (photo.uploadError ? `Upload failed, will retry: ${photo.uploadError}` : 'Saved on this phone · not uploaded yet') : photo.blobState === 'uploaded' ? 'Saved on this phone and in the cloud' : ''}
+          {photo.blobState === 'local' ? (photo.uploadError ? `Upload failed, will retry: ${photo.uploadError}` : 'Saved in the app · not uploaded yet') : photo.blobState === 'uploaded' ? 'Saved in the app and in the cloud' : ''}
+          {photo.savedToDevice ? ' · copy sent to Photos' : ''}
         </div>
       </div>
     </div>

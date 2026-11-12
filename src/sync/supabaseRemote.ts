@@ -60,6 +60,28 @@ export class SupabaseRemote implements Remote {
     return data;
   }
 
+  async uploadFile(path: string, blob: Blob, contentType: string): Promise<void> {
+    return this.uploadPhoto(path, blob, contentType);
+  }
+
+  async downloadFile(path: string): Promise<Blob> {
+    return this.downloadPhoto(path);
+  }
+
+  async listFiles(folder: string) {
+    const { data, error } = await this.client.storage
+      .from(PHOTO_BUCKET)
+      .list(folder, { limit: 1000, sortBy: { column: 'name', order: 'desc' } });
+    if (error) throw new Error(error.message);
+    return (data ?? [])
+      .filter((f) => f.id) // folders have no id
+      .map((f) => ({
+        name: f.name,
+        size: (f.metadata as { size?: number } | null)?.size ?? null,
+        createdAt: f.created_at ?? null,
+      }));
+  }
+
   async deletePhoto(path: string): Promise<void> {
     const { error } = await this.client.storage.from(PHOTO_BUCKET).remove([path]);
     if (error) throw new Error(error.message);

@@ -90,6 +90,8 @@ export interface Photo extends SyncFields {
   /** local-only: where the image binary lives */
   blobState: BlobState;
   uploadError?: string | null;
+  /** local-only: a labelled copy was handed to the iPhone share sheet (Save to Photos) */
+  savedToDevice?: 0 | 1;
 }
 
 export interface PhotoBlob {

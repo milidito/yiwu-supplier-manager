@@ -22,6 +22,8 @@ export interface AppSettings {
   defaultUnit: string;
   /** Your own manual exchange rates: how many CNY one unit of the currency buys. Used only for "≈ CNY" hints. */
   ratesToCny: Record<string, number | null>;
+  /** after taking photos, show a one-tap "Save to Photos" button */
+  offerSaveToPhotos: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -29,6 +31,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultCurrency: 'CNY',
   defaultUnit: 'piece',
   ratesToCny: { USD: null, CAD: null, EUR: null },
+  offerSaveToPhotos: true,
 };
 
 export async function getSettings(d: AppDB = defaultDb): Promise<AppSettings> {
@@ -164,8 +167,9 @@ export async function deleteSupplier(id: string, d: AppDB = defaultDb) {
   const t = nowIso();
   await d.transaction('rw', [d.suppliers, d.products, d.quotations, d.photos, d.photoBlobs], async () => {
     await d.suppliers.update(id, { deleted: 1, dirty: 1, updatedAt: t });
-    await d.products.where('supplierId').equals(id).modify({ deleted: 1, dirty: 1, updatedAt: t });
-    await d.quotations.where('supplierId').equals(id).modify({ deleted: 1, dirty: 1, updatedAt: t });
+    // only children that are still active; ones deleted earlier keep their own deletion time
+    await d.products.where('supplierId').equals(id).filter((x) => !x.deleted).modify({ deleted: 1, dirty: 1, updatedAt: t });
+    await d.quotations.where('supplierId').equals(id).filter((x) => !x.deleted).modify({ deleted: 1, dirty: 1, updatedAt: t });
     const photos = await d.photos.where('supplierId').equals(id).toArray();
     for (const ph of photos) await markPhotoDeleted(ph, t, d);
   });
@@ -203,7 +207,7 @@ export async function deleteProduct(id: string, d: AppDB = defaultDb) {
   const t = nowIso();
   await d.transaction('rw', [d.products, d.quotations, d.photos, d.photoBlobs], async () => {
     await d.products.update(id, { deleted: 1, dirty: 1, updatedAt: t });
-    await d.quotations.where('productId').equals(id).modify({ deleted: 1, dirty: 1, updatedAt: t });
+    await d.quotations.where('productId').equals(id).filter((x) => !x.deleted).modify({ deleted: 1, dirty: 1, updatedAt: t });
     const photos = await d.photos.where('productId').equals(id).toArray();
     for (const ph of photos) await markPhotoDeleted(ph, t, d);
   });
@@ -247,6 +251,7 @@ export async function updateQuotation(id: string, patch: Partial<Quotation>, d: 
 }
 
 export async function deleteQuotation(id: string, d: AppDB = defaultDb) {
+  // soft delete (restorable from Trash)
   await d.quotations.update(id, { deleted: 1, dirty: 1, updatedAt: nowIso() });
   emitChange();
 }
@@ -290,11 +295,63 @@ export async function updatePhoto(id: string, patch: Partial<Pick<Photo, 'kind' 
   emitChange();
 }
 
+/** Soft delete: the image file is kept on the phone and in the cloud so it can be restored from Trash. */
 async function markPhotoDeleted(ph: Photo, t: string, d: AppDB) {
-  // If the image was never uploaded there is nothing to remove in the cloud.
-  const blobState = ph.blobState === 'uploaded' ? 'uploaded' : 'purged';
-  await d.photos.update(ph.id, { deleted: 1, dirty: 1, updatedAt: t, blobState });
-  await d.photoBlobs.delete(ph.id);
+  if (ph.deleted) return;
+  await d.photos.update(ph.id, { deleted: 1, dirty: 1, updatedAt: t });
+}
+
+async function undeletePhoto(ph: Photo, t: string, d: AppDB) {
+  const hasBlob = !!(await d.photoBlobs.get(ph.id));
+  const blobState = hasBlob ? (ph.blobState === 'uploaded' ? 'uploaded' : 'local') : 'remote_only';
+  await d.photos.update(ph.id, { deleted: 0, dirty: 1, updatedAt: t, blobState });
+}
+
+// ---------- trash / restore ----------
+/** Restores a deleted supplier and everything that was deleted together with it. */
+export async function restoreSupplier(id: string, d: AppDB = defaultDb) {
+  const t = nowIso();
+  await d.transaction('rw', [d.suppliers, d.products, d.quotations, d.photos, d.photoBlobs, d.meta], async () => {
+    const s = await d.suppliers.get(id);
+    if (!s || !s.deleted) return;
+    const when = s.updatedAt;
+    // if its code was reused meanwhile, give it a new one
+    const clash = await d.suppliers.where('code').equals(s.code).filter((x) => x.id !== id && !x.deleted).count();
+    const code = clash ? await nextSupplierCode(d) : s.code;
+    await d.suppliers.update(id, { deleted: 0, dirty: 1, updatedAt: t, code });
+    await d.products.where('supplierId').equals(id).filter((p) => !!p.deleted && p.updatedAt === when).modify({ deleted: 0, dirty: 1, updatedAt: t });
+    await d.quotations.where('supplierId').equals(id).filter((q) => !!q.deleted && q.updatedAt === when).modify({ deleted: 0, dirty: 1, updatedAt: t });
+    const photos = await d.photos.where('supplierId').equals(id).filter((p) => !!p.deleted && p.updatedAt === when).toArray();
+    for (const ph of photos) await undeletePhoto(ph, t, d);
+  });
+  emitChange();
+}
+
+export async function restoreProduct(id: string, d: AppDB = defaultDb) {
+  const t = nowIso();
+  await d.transaction('rw', [d.products, d.quotations, d.photos, d.photoBlobs], async () => {
+    const p = await d.products.get(id);
+    if (!p || !p.deleted) return;
+    const when = p.updatedAt;
+    await d.products.update(id, { deleted: 0, dirty: 1, updatedAt: t });
+    await d.quotations.where('productId').equals(id).filter((q) => !!q.deleted && q.updatedAt === when).modify({ deleted: 0, dirty: 1, updatedAt: t });
+    const photos = await d.photos.where('productId').equals(id).filter((x) => !!x.deleted && x.updatedAt === when).toArray();
+    for (const ph of photos) await undeletePhoto(ph, t, d);
+  });
+  emitChange();
+}
+
+export async function restorePhoto(id: string, d: AppDB = defaultDb) {
+  await d.transaction('rw', d.photos, d.photoBlobs, async () => {
+    const ph = await d.photos.get(id);
+    if (ph?.deleted) await undeletePhoto(ph, nowIso(), d);
+  });
+  emitChange();
+}
+
+export async function restoreQuotation(id: string, d: AppDB = defaultDb) {
+  await d.quotations.update(id, { deleted: 0, dirty: 1, updatedAt: nowIso() });
+  emitChange();
 }
 
 export async function deletePhoto(id: string, d: AppDB = defaultDb) {

@@ -25,8 +25,8 @@ import { type Remote, type RemoteRow, fromRemote, photoPath, toRemote } from './
  *                    the losing version is saved in the Conflicts list for manual review.
  *            Supplier-code collisions (two devices both created YW-015 offline) are fixed on the
  *            not-yet-synced local record, which gets the next free code; this is logged.
- *  2. PHOTOS upload local image files (path = <userId>/<photoId>.jpg, overwrite allowed -> retry-safe),
- *            remove cloud files of deleted photos.
+ *  2. PHOTOS upload local image files (path = <userId>/<photoId>.jpg, overwrite allowed -> retry-safe).
+ *            Deletions are soft: files of deleted photos stay in the cloud and on the phone (restorable).
  *  3. PUSH   upsert all records with pending edits (keyed by UUID -> retries never duplicate).
  *            A record edited while the push was in flight stays pending and is pushed next time.
  *  4. FETCH  download images that exist only in the cloud (e.g. taken on another device).
@@ -182,7 +182,7 @@ export class SyncEngine {
 
       if (!local) {
         const rec: Local = { ...incoming, ...syncedFields };
-        if (table === 'photos') (rec as unknown as Photo).blobState = incoming.deleted ? 'purged' : 'remote_only';
+        if (table === 'photos') (rec as unknown as Photo).blobState = 'remote_only';
         if (table === 'suppliers') await this.fixCodeCollision(rec as unknown as Supplier);
         await t.add(rec);
         return true;
@@ -190,11 +190,13 @@ export class SyncEngine {
 
       if (local.updatedAt === incoming.updatedAt && !local.dirty) return false; // already have it
 
-      const preserve = table === 'photos' ? { blobState: (local as unknown as Photo).blobState } : {};
+      const preserve =
+        table === 'photos'
+          ? { blobState: (local as unknown as Photo).blobState, savedToDevice: (local as unknown as Photo).savedToDevice }
+          : {};
 
       if (!local.dirty) {
         await t.put({ ...local, ...incoming, ...syncedFields, ...preserve });
-        if (table === 'photos' && incoming.deleted) await this.purgeLocalBlob(row.id);
         if (table === 'suppliers') await this.fixCodeCollision({ ...local, ...incoming } as unknown as Supplier);
         return true;
       }
@@ -219,7 +221,6 @@ export class SyncEngine {
       res.conflicts++;
       if (remoteWins) {
         await t.put({ ...local, ...incoming, ...syncedFields, ...preserve });
-        if (table === 'photos' && incoming.deleted) await this.purgeLocalBlob(row.id);
       } else {
         // keep local values but remember the server version we have now seen,
         // so the next push simply overwrites it.
@@ -232,11 +233,6 @@ export class SyncEngine {
       });
       return remoteWins;
     });
-  }
-
-  private async purgeLocalBlob(id: string) {
-    await this.db.photoBlobs.delete(id);
-    await this.db.photos.update(id, { blobState: 'purged' });
   }
 
   /** If another supplier already uses this code, renumber the record that has never been synced. */
@@ -287,16 +283,8 @@ export class SyncEngine {
         await this.db.photos.update(ph.id, { uploadError: msg(e) });
       }
     }
-    // remove cloud files of deleted photos
-    const toRemove = await this.db.photos.where('blobState').equals('uploaded').filter((p) => !!p.deleted).toArray();
-    for (const ph of toRemove) {
-      try {
-        await this.remote.deletePhoto(photoPath(userId, ph.id));
-        await this.db.photos.update(ph.id, { blobState: 'purged' });
-      } catch (e) {
-        res.errors.push(`Remove photo ${ph.id.slice(0, 8)}: ${msg(e)}`);
-      }
-    }
+    // Note: files of deleted photos are deliberately NOT removed from the cloud,
+    // so anything deleted by mistake can be restored (Trash / snapshots).
     return n;
   }
 

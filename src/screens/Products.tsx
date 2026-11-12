@@ -193,7 +193,7 @@ export function QuoteEditor({ id, productId }: { id?: string; productId?: string
           <button
             className="btn btn-danger-outline"
             onClick={async () => {
-              if (!confirm('Delete this quote?')) return;
+              if (!confirm('Move this quote to Trash?')) return;
               await deleteQuotation(id);
               back(`/p/${product.id}`);
             }}
@@ -274,7 +274,7 @@ export function ProductDetail({ id }: { id: string }) {
         <button
           className="btn btn-danger-outline"
           onClick={async () => {
-            if (!confirm('Delete this product and its quotes?')) return;
+            if (!confirm('Move this product and its quotes to Trash?')) return;
             await deleteProduct(id);
             navigate(`/s/${p.supplierId}`, true);
           }}

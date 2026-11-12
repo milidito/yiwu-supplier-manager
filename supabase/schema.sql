@@ -126,10 +126,11 @@ begin
 end $$;
 
 -- ---------- private storage bucket for photos ----------
--- Files are stored as <user_id>/<photo_id>.jpg; only the owner can access their folder.
+-- Files are stored as <user_id>/<photo_id>.jpg and daily snapshots as <user_id>/backups/<time>.zip;
+-- only the owner can access their folder.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('supplier-photos', 'supplier-photos', false, 10485760, array['image/jpeg','image/png','image/webp','image/heic','application/octet-stream'])
-on conflict (id) do update set public = false;
+values ('supplier-photos', 'supplier-photos', false, 10485760, array['image/jpeg','image/png','image/webp','image/heic','application/zip','application/octet-stream'])
+on conflict (id) do update set public = false, allowed_mime_types = excluded.allowed_mime_types;
 
 drop policy if exists "ysm photos select" on storage.objects;
 drop policy if exists "ysm photos insert" on storage.objects;
