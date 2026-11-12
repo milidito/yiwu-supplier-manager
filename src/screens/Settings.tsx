@@ -65,7 +65,8 @@ function CloudSection() {
           disabled={busy}
           onClick={async () => {
             setMsg(null);
-            const u = url.trim().replace(/\/+$/, '');
+            // accept pasted API URLs like https://x.supabase.co/rest/v1/ -> https://x.supabase.co
+            const u = url.trim().replace(/\/(rest|auth|storage)\/v1(\/.*)?$/, '').replace(/\/+$/, '');
             const k = key.trim();
             if (!/^https?:\/\/.+/.test(u)) return setMsg('URL must start with https://');
             if (k.length < 20) return setMsg('Key looks too short');
