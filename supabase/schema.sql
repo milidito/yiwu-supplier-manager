@@ -14,7 +14,9 @@
 -- =====================================================================
 
 create or replace function public.ysm_touch() returns trigger
-language plpgsql as $$
+language plpgsql
+set search_path = ''
+as $$
 begin
   new.server_updated_at := clock_timestamp();
   if tg_op = 'UPDATE' then
