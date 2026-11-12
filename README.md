@@ -2,7 +2,9 @@
 
 Offline-first, mobile-first supplier CRM for walking the Yiwu market: capture a supplier (ID, photos, WeChat, phone, district/floor/booth, products, prices) in about a minute with no internet, then search, compare quotes and back up or sync later.
 
-**Status (v0.3.0, 12 Nov 2026):** working MVP. Local/offline features are implemented and tested. Cloud sync is implemented and tested against a local Postgres + PostgREST stand-in for Supabase. **No real Supabase project or hosting has been created yet.** That needs the owner's approval (see `docs/CLOUD-SETUP.md` and `docs/DEPLOY.md`).
+**Live app:** https://milidito.github.io/yiwu-supplier-manager/ (auto-deployed from `main` by GitHub Actions)
+
+**Status (v0.3.0, 12 Nov 2026):** working MVP. Local/offline features are implemented and tested. Cloud sync is implemented and tested against a local Postgres + PostgREST stand-in for Supabase. Hosting is live on GitHub Pages. **The Supabase project has not been created yet** (see `docs/CLOUD-SETUP.md`).
 
 ## Stack and why
 
