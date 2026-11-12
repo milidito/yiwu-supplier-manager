@@ -41,7 +41,8 @@ export function More() {
 
 function CloudSection() {
   const st = useSyncStatus();
-  const cfg = useLiveQuery(() => getMeta<{ url: string; anonKey: string } | null>(db, 'cloudConfig', null), []);
+  // same source of truth as the sync runner (includes the project preset in the deploy build)
+  const cfg = useLiveQuery(() => syncRunner.getConfig(), []);
   const [url, setUrl] = useState('');
   const [key, setKey] = useState('');
   const [email, setEmail] = useState('');
