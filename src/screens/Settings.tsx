@@ -476,7 +476,8 @@ function DangerSection() {
           const t = prompt(`This erases ALL suppliers, prices and photos on this phone.${warn}\n\nExport a backup first. Type ERASE to confirm.`);
           if (t !== 'ERASE') return;
           await db.delete();
-          localStorage.clear();
+          // only this app's keys: the Bearing Expo app shares this web address' storage
+          Object.keys(localStorage).filter((k) => k.startsWith('ysm-') || k.startsWith('yiwu-')).forEach((k) => localStorage.removeItem(k));
           location.reload();
         }}
       >
